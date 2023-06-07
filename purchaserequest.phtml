@@ -1,0 +1,779 @@
+<?php
+
+// set debug to greater than 0 troubleshoot
+$debug = 0;
+
+// include common header & footer
+include("includes.php");
+
+//decide which key to use for this script
+include("api_keys.inc");
+$server = "production";
+$apikey = $apikeys[$server];
+
+// database connector
+$con =& forms_connect();
+
+// empty variables
+$postData = '';
+$uploadedFile = array();
+$statusMsg = '';
+
+// define message class
+$msgClass = 'errordiv';
+
+// get today's date
+$today = date("Ymd");
+
+// security variables
+$mysecurity = rand(5, 15998);
+$keytest = $mysecurity * 2 ;
+
+if ($debug > 0) {
+  if ($_POST) {
+    print_r($_POST);
+  }
+}
+
+if($_POST){
+  // Get the submitted form data
+  if ($debug > 0) { print_r($_POST); }
+  $postData = $_POST;
+  $tmphtml = $rand = "";
+  foreach ( $_POST as $key => $value ) {
+    $$key = mysqli_real_escape_string($con, trim($value));
+    if ($debug > 0) { echo "Key: $key; Value: $value<br />"; }
+    if (($key != "yoursecurity") && ($key != "keytest") && ($key != "submit") && (!empty($value))) {
+      if ($key == "Priority") {
+       $tmphtml .= "<strong>$key: $value</strong><br />";
+      } elseif ($key == "LibraryLocation") {
+       $tmphtml .= "<p><strong>$key: $value</strong><br />";
+      } elseif ($key == "Notify") {
+       $tmphtml .= "<p>$key: $value<br />";
+      } elseif (($key == "Author") || ($key == "Title")) {
+       $tmphtml .= "<p>$key: $value<br />";
+      } elseif ($key == "format") {
+       $tmphtml .= "<p><strong>Format: $value</strong><br />";
+      } elseif ($key == "Selector") {
+       $tmphtml .= "<strong>$key: $value</strong><br />";
+       $rand .= $today."-".mt_rand();
+      } else {
+       $tmphtml .= "$key - $value<br />";
+      }
+    }
+  }
+
+  //set up the time of application
+  $timearray=getdate();
+  $mon=$timearray['month'];
+  $day=$timearray['mday'];
+  $year=$timearray['year'];
+  $time=date("H:i");
+
+  if ($debug > 0) { echo "Mon: ".$mon."; Day: ".$day."; Year: ".$year."; Time: ".$time."<br />"; }
+
+  // Check whether submitted data is not empty
+  if((!empty($Title)) && (!empty($Fund)) && (!empty($Selector)) && (!empty($Priority)) && (!empty($format))) {
+
+    if ($debug > 0) { echo "Fields not empty.<br />"; }
+
+    // Validate email
+    if((!empty($RequestorEmail)) && (filter_var($RequestorEmail, FILTER_VALIDATE_EMAIL) === false)){
+      $statusMsg = 'Please enter a valid Requestor Email.';
+    } else {
+      if ($debug > 0) { echo "Email valid.<br />"; }
+
+      $uploadStatus = 1;
+
+      if ($debug > 0) { echo "Upload Status: ".$uploadStatus."<br />"; }
+
+      $page=curPageURL();
+      $tmphtml .= "<p>Staff Use Only: ".$page."<p>";
+
+      if ($debug > 0) { echo "TmpHTML: ".$tmphtml."<br />"; }
+
+      // Upload attachment file
+      $files = array_filter($_FILES['attachment']['name']);
+      $total = count($files);
+
+      if ($total > 0) {
+        if ($debug > 0) { 
+          echo "There are $total attachments.<br />"; 
+        }
+        for ($i=0; $i < $total; $i++) {
+          // File path config
+          $targetDir = "uploads/";
+          $fileName = basename($_FILES["attachment"]["name"][$i]);
+          if ($debug > 0) {
+             echo "FileName $i: $fileName<br />";
+          }
+          $targetFilePath = $targetDir . $fileName;
+          if ($debug > 0) {
+             echo "TargetFilePath: $targetFilePath<br />";
+          }
+          $fileType = pathinfo($targetFilePath,PATHINFO_EXTENSION);
+          if ($debug > 0) {
+             echo "fileType: $fileType<br />";
+          }
+          // Allow certain file formats
+          $allowTypes = array('pdf', 'doc', 'docx', 'jpg', 'png', 'jpeg', 'xlsx', 'xls');
+          if(in_array($fileType, $allowTypes)){
+            if ($debug > 0) {
+              echo "File Type in Array!<br />";
+              echo "FileName: $fileName<br />";
+              echo "TargetFilePath: $targetFilePath<br />";
+            }
+            // Upload file to the server
+            if(move_uploaded_file($_FILES['attachment']['tmp_name'][$i], $targetFilePath)) {
+              if ($debug > 0) { echo "Successfully moved file.<br />"; }
+              $uploadedFile[] = $targetFilePath;
+            } else {
+              $uploadStatus = 0;
+              $statusMsg = "Sorry, there was an error uploading your file.";
+            }
+          } else {
+            $uploadStatus = 0;
+            $statusMsg = 'Sorry, only PDF, DOC, JPG, JPEG, & PNG files are allowed to upload.';
+          }
+        }
+      } else {
+        if ($debug > 0) { echo "There are no attachments.<br />"; }
+      }
+
+      if($uploadStatus > 0){
+
+        // Recipient
+        //$toEmail = 'jmcgranahan@gmail.com';
+	$toEmail = 'orders.library@vanderbilt.edu';
+
+        if ((isset($spemail)) && ($spemail == "specialcollections@vanderbilt.edu")) {
+          $toEmail .= ", $spemail";
+        }
+
+        // Sender
+        $from = 'libsys@vanderbilt.edu';
+        $fromName = 'StaffPurchaseRequest';
+
+        // Subject
+        $emailSubject = "New Staff Purchase Request ($rand) - $Priority: $Title";
+
+        // Message
+        $htmlContent = '<h2 align="center">Staff Purchase Request Submitted</h2>';
+        $htmlContent .= '<h3 align="center">Request Number: '.$rand.'</h3>';
+        $htmlContent .= '<div align="center">'.$mon.' '.$day.', '.$year.' '.$time.'</div>';
+        $htmlContent .= $tmphtml;
+
+        // Header for sender info
+	$headers="From: $from";
+	if ((isset($RequestorEmail)) && (isset($CCEmail))) {
+	  $headers .= "\r\n Cc: $RequestorEmail,$CCEmail";
+	} elseif ((isset($RequestorEmail)) && (!isset($CCEmail))) {
+          $headers .= "\r\n Cc: $RequestorEmail";
+	} elseif ((!isset($RequestorEmail)) && (isset($CCEmail))) {
+          $headers .= "\r\n Cc: $CCEmail";
+	}
+        /** 
+        if (isset($CCEmail)) {
+          $headers .= "\r\n" . "Cc: $CCEmail";
+        }
+        **/
+        $headers .= "\r\n" . "Bcc: jamen.mcgranahan@vanderbilt.edu";
+        if ($debug > 0) { echo "From Email Address: ".$from."<br />Requestor Email Address: ".$RequestorEmail."<br />CCEmail Address: ".$CCEmail."<br />"; }
+
+        if(!empty($uploadedFile)) {
+
+          // Boundary
+          $semi_rand = md5(time());
+          $mime_boundary = "==Multipart_Boundary_x{$semi_rand}x";
+
+          // Headers for attachment
+          $headers .= "\r\nMIME-Version: 1.0\n" . "Content-Type: multipart/mixed;\n" . " boundary=\"{$mime_boundary}\"";
+
+          // Multipart boundary
+          $message = "--{$mime_boundary}\n" . "Content-Type: text/html; charset=\"UTF-8\"\n" .
+            "Content-Transfer-Encoding: 7bit\n\n" . $htmlContent . "\n\n";
+
+          // Preparing attachment
+          if ($total > 0) {
+            for ($i = 0; $i < $total; $i++) {
+            if(is_file($uploadedFile[$i])){
+              $message .= "--{$mime_boundary}\n";
+              $fp =    @fopen($uploadedFile[$i],"rb");
+              $data =  @fread($fp,filesize($uploadedFile[$i]));
+              @fclose($fp);
+              $data = chunk_split(base64_encode($data));
+              $message .= "Content-Type: application/octet-stream; name=\"".basename($uploadedFile[$i])."\"\n" .
+              "Content-Description: ".basename($uploadedFile[$i])."\n" .
+              "Content-Disposition: attachment;\n" . " filename=\"".basename($uploadedFile[$i])."\"; size=".filesize($uploadedFile[$i]).";\n" .
+              "Content-Transfer-Encoding: base64\n\n" . $data . "\n\n";
+            }
+            }
+          }
+
+          $message .= "--{$mime_boundary}--";
+          $returnpath = "-f" . $toEmail;
+
+          // Send email
+          $mail = mail($toEmail, $emailSubject, $message, $headers, $returnpath);
+        } else {
+          // Set content-type header for sending HTML email
+          $headers .= "\r\n". "MIME-Version: 1.0";
+          $headers .= "\r\n". "Content-type:text/html;charset=UTF-8";
+
+          //echo "Headers: $headers <br />";
+
+          // Send email
+          $mail = mail($toEmail, $emailSubject, $htmlContent, $headers);
+
+        }
+
+        // If mail sent
+        if($mail){
+          $statusMsg = 'Your purchase request has been submitted successfully !';
+          $msgClass = 'succdiv';
+
+          $postData = '';
+        } else {
+          $statusMsg = 'Your purchase request submission failed, please try again.';
+          if ($debug > 0) { echo "ToEmail: ".$toEmail."<br />"; }
+        }
+      }
+    }
+  } else {
+    echo "Missing data.<br />";
+    $statusMsg = 'Please fill all the fields.';
+  }
+} 
+
+// body of form here
+// from includes.php
+echo $top;
+
+?>
+
+<table width='70%' align='center'><tr><td>
+<h2 align="center">Vanderbilt Library Staff Purchase Request</h2>
+
+<?php
+if (isset($htmlContent)) {
+  echo "<h3>Submission results</h3>";
+  echo $htmlContent;
+  echo "<a href='' onclick=\"showDiv('pform')\">Request another title</a>";
+  echo "<span style=\"display: none\" id=\"pform\">"; 
+} else {
+
+?>
+<div align="left">
+ <div align="left">
+  <span class="smlines"><b>NOTE:</b>Fields with <b>bold</b> labels are required.</span>
+ </div>
+</div>
+
+<?php
+if((!empty($statusMsg)) && ($msgClass != 'succdiv')){
+?>
+
+<p class="statusMsg <?php echo !empty($msgClass)?$msgClass:''; ?>"><?php echo $statusMsg; ?></p>
+
+<?php
+}
+unset($_POST);
+
+?>
+
+<form method="post" id="purchaserequest" action="<?php echo $_SERVER['PHP_SELF']; ?>" enctype="multipart/form-data">
+<!-- Display contact form -->
+<table width="82%">
+ <tr>
+  <td colspan="2">
+   <h4 align="center">Selector Information</h4>
+  </td>
+ </tr>
+
+ <tr>
+  <td width="55%">
+   <div class="form-group"><strong>Selector:</strong></div>
+  </td>
+  <td>
+   <div class="form-group"><input type="text" name="Selector" class="form-control" value="<?php echo !empty($postData['Selector'])?$postData['Selector']:''; ?>" required=""></div>
+  </td>
+ </tr>
+
+ <tr>
+  <td width="55%">
+   <div class="form-group"><strong>Fund Code:</strong>
+  </td>
+  <td>
+   <input type="text" name="Fund" class="form-control" value="<?php echo !empty($postData['Fund'])?$postData['Fund']:''; ?>" required=""></div>
+  </td>
+ </tr>
+
+ <tr>
+  <td width="55%" valign="top">
+   <div class="form-group"><strong>Priority:</strong>
+  </td>
+  <td>
+   <input type="radio" name="Priority" value="Normal" onclick="hideDiv('CourseNum');" <?php if ((isset($Priority)) && ($Priority == "Normal")) { echo "checked"; } ?>>Normal<br />
+   <input type="radio" name="Priority" value="Reserves" onclick="showDiv('CourseNum');" <?php if ((isset($Priority)) && ($Priority == "Reserves")) { echo "checked"; } ?>>Reserves <span style="display: none" id="CourseNum"> -- Course Number: <input name="CourseNum" type="text" value="<?php if (isset($CourseNum)) { echo "$CourseNum"; } ?>" /></span><br />
+   <input type="radio" name="Priority" value="Rush" required="" onclick="hideDiv('CourseNum');" <?php if ((isset($Priority)) && ($Priority == "Rush")) { echo "checked"; } ?>>Rush
+  </td>
+ </tr>
+ <tr><td colspan="2">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>Materials ordered as RUSH are usually received within about a week to 10 days, depending on the place of publication. Non-rush materials usually take 4-6 weeks, if they are available at the time of order.</em></td></tr>
+
+ <tr><td colspan="2"><p></td></tr>
+
+ <tr>
+  <td width="55%">
+   <div class="form-group">Needed By Date:
+  </td>
+  <td>
+   <input type="text" name="NeedByDate" id="datepicker" placeholder="mm/dd/yyyy" value="<?php if (isset($NeedByDate)) { echo "$NeedByDate"; } ?>"></div>
+  </td>
+ </tr>
+
+ <tr>
+  <td colspan="2">
+   <div class="form-group"><strong>Library and Location:</strong>
+  </td>
+ </tr>
+
+ <tr>
+  <td colspan="2">
+   <select name="LibraryLocation">
+    <option value="">(...please select one...)</option>
+    <option value="Online">Online</option>
+<?php
+
+$baseurl="https://api-na.hosted.exlibrisgroup.com/almaws/v1/conf/libraries";
+$url=$baseurl."?apikey=".$apikey;
+$ch = curl_init();
+curl_setopt($ch, CURLOPT_URL,$url);
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+$response=curl_exec ($ch);
+$xml=new SimpleXMLElement($response);
+
+foreach($xml->library as $libraries) {
+  $code=$libraries->code;
+  $library=$libraries->name;
+  $url2=$baseurl."/".$libraries->code."/locations?apikey=".$apikey;
+  $ch2=curl_init();
+  curl_setopt($ch2, CURLOPT_URL, $url2);
+  curl_setopt($ch2, CURLOPT_RETURNTRANSFER, 1);
+  $response2=curl_exec($ch2);
+  $xml2=new SimpleXMLElement($response2);
+  foreach($xml2->location as $locations) {
+    $loccode=$locations->code;
+    $locname=$locations->name;
+    if (($code != "RES_SHARE") && ($code != "INTERNET") && ($code != "PROCESSING") && ($code != "EMPTY") && ($code != "ANNEX") && ($code != "LAW")) {
+      if (($loccode != "WITHDRAWN") && ($loccode != "UNASSIGNED") && ($loccode != "SHADOW") && ($loccode != "MISSING") && ($loccode != "OTHER") && ($loccode != "MISC-MAIL") && ($loccode != "ON-ORDER") && ($loccode != "ORD-CANCEL") && ($loccode != "LOST") && ($loccode != "ORDER-DEPT") && ($loccode != "VERIFICATN") && ($loccode != "APL") && (strpos($loccode, "NEW") === false) && (strpos($loccode, "ARCHIVE") === false) && ($loccode != "BILLED") && (strtolower($loccode) != "borrowing") && ($loccode != "CIRC-DESK") && ($loccode != "AUDIOVISUA") && ($loccode != "BAUDELAIRE") && ($loccode != "BILLED") && ($loccode != "BOOKS-1FL") && ($loccode != "COMMROOM") && ($loccode != "DOCUMENTS") && (strpos($loccode, "RESERV") === false) && ($loccode != "FAMRESCTR") && (strpos($loccode, "HOLDS") === false) && ($loccode != "INDEX-ABST") && (strpos($loccode, "JUDAICA") === false) && ($loccode != "LEG-COLL") && (strtolower($loccode) != "lending") && ($loccode != "LIBRARYLIT") && ($loccode != "LRC-BUTTRK") && ($loccode != "MAP-ROOM") && (strpos($loccode, "NETWORK") === false) && ($loccode != "NOT-AVAIL") && ($loccode != "ON-EXHIBIT") && ($loccode != "PERIODICAL") && ($loccode != "READING-RM") && ($loccode != "ROOM-224") && (strpos($loccode, "STORAGE") === false) && (strpos($loccode, "SUB-STUDY") === false) && ($loccode != "VIDEO") && ($loccode != "WORKROOM")) {
+        if ($loccode != "STAFF-OFFC") {
+        if ($loccode != "VAULT") {
+        echo "<option value='";
+        echo $code."|".$loccode;
+        echo "'";
+        if ((isset($LibraryLocation)) && ($LibraryLocation == "$code|$loccode")) {
+          echo " selected";
+        }
+        echo ">";
+        echo $library." | ".$locname;
+        echo "</option>";
+        }
+        }
+      }
+    }
+  }
+}
+
+?>
+   </select>
+  </td>
+ </tr>
+</table>
+
+<p>
+
+<table width="82%" style="border:1px solid;">
+ <tr>
+  <td width="55%">
+   <div class="form-group">If Special Collections, enter name of collection:</div>
+  </td>
+  <td>
+   <div class="form-group">
+    <select name="CollectionName">
+     <option value=""></option>
+     <option value="Sam Fleming Southern Civilization Collection">Sam Fleming Southern Civilization Collection</option>
+     <option value="Harris D. Riley, Jr. Civil War Heritage Collection">Harris D. Riley, Jr. Civil War Heritage Collection</option>
+     <option value="Wills Fugitive/Agrarian Collection">Wills Fugitive/Agrarian Collection</option>
+     <option value="VU Rare Books">VU Rare Books</option>
+   </select>
+   </div>
+  </td>
+ </tr>
+
+ <tr>
+  <td width="55%">
+    <div class="form-group">Accession Number Type:</div>
+  </td>
+  <td>
+    <div class="form-group">
+      <select name="AccessionNumType">
+        <option value=""></option>
+        <option value="VU">VU</option>
+        <option value="LC">LC</option>
+        <option value="MSS">MSS</option>
+      </select>
+    </div>
+  </td>
+ </tr>
+
+ <tr>
+  <td colspan="2">
+Selectors: If material is to be housed in Special Collections, check here <input type="checkbox" name="spemail" value="specialcollections@vanderbilt.edu" /> to copy them on this request.<p>
+PLEASE NOTE: All materials <strong>40 cm or larger</strong> <em>will automatically</em> be designated as FOLIO, housed in Special Collections, and will not circulate.<p>
+<strong>For Spec Coll orders, attach relevant vendor citation/information below if available.</strong>
+
+  </td>
+ </tr>
+</table>
+
+<br />
+
+<hr size="1">
+
+<table width="82%">
+ <tr>
+  <td colspan="2" align="center">
+   <h4 align="center">Patron Notification Options</h4>
+  </td>
+ </tr>
+
+ <tr>
+  <td width="55%" valign="top">
+   <div class="form-group">Select one of the following options:</div>
+  </td>
+  <td>
+   <div class="form-group">
+    <input type="radio" name="Notify" value="Hold at Service Desk" onclick="showDiv( 'hideme' );" <?php if ((isset($Notify)) && ($Notify== "Hold at Service Desk")) { echo "checked"; } ?> ><strong>HOLD</strong> at the appropriate circulation desk for checkout by the Requestor.<br />
+    <input type="radio" name="Notify" value="Process for Faculty Delivery" onclick="showDiv( 'hideme' );" <?php if ((isset($Notify)) && ($Notify== "Process for Faculty Delivery")) { echo "checked"; } ?> >Route book for <strong>FACULTY DELIVERY</strong>.<br />
+    <input type="radio" name="Notify" value="Notify patron when item is received but do not HOLD" onclick="showDiv( 'hideme' );" <?php if ((isset($Notify)) && ($Notify== "Notify patron when item is received but do not HOLD")) { echo "checked"; } ?> ><strong>NOTIFY</strong> requestor via email when material is received in Acquisitions & Eresources, but do not hold for checkout.
+   </div>
+  </td>
+ </tr>
+ <tr><td colspan="2"><em>By selecting one of the above, you will be prompted for more Requestor information.</em></td></tr>
+</table>
+
+<table width='82%' id='hideme' style='display: none;'>
+ <tr>
+  <td width="55%">
+   <div class="form-group">Requestor Name:</div>
+  </td>
+  <td>
+   <div class="form-group"><input type="text" name="RequestorName" id="RequestorName" class="form-control" value="<?php if (isset($RequestorName)) { echo "$RequestorName"; } ?>" /></div>
+  </td>
+ </tr>
+
+ <tr>
+  <td width="55%">
+   <div class="form-group">Requestor Email:</div>
+  </td>
+  <td>
+   <div class="form-group"><input type="email" name="RequestorEmail" id="RequestorEmail" class="form-control" value="<?php if (isset($RequestorEmail)) { echo $RequestorEmail; } ?>" /></div>
+  </td>
+ </tr>
+
+ <tr>
+  <td width="55%">
+   <div class="form-group">Patron's Alma Primary Identifier:</div>
+  </td>
+  <td>
+   <div class="form-group"><input type="text" name="PatronID" id="PatronID" class="form-control" value="<?php if (isset($PatronID)) { echo $PatronID; } ?>" size="25" /></div>
+  </td>
+ </tr>
+ <tr>
+  <td width="55%"><div class="form-group">Need to Clear Patron Notification Option Selection?</div></td>
+  <td><div class="form-group">
+<input type="button" value="Clear Selection" id="ExampleTrigger" onclick="hideDiv( 'hideme');">
+<!-- input type="radio" id="clearPN" onclick="hideDiv( 'hideme' ); PatronID.value=''; RequestorEmail.value=''; RequestorName.value='';" -->
+</td>
+ </tr>
+</table>
+
+<hr>
+
+<table width="82%">
+ <tr>
+  <td colspan="2">
+    <h4 align="center">Bibliographic Information</h4>
+  </td>
+ </tr>
+
+ <tr>
+  <td width="55%">
+   <div class="form-group">Author:</div>
+  </td>
+  <td>
+   <div class="form-group"><input type="text" name="Author" class="form-control" value="<?php if (isset($Author)) { echo $Author; } ?>" /></div>
+  </td>
+ </tr>
+
+ <tr>
+  <td width="55%">
+    <div class="form-group"><strong>Title:</strong></div>
+  </td>
+  <td>
+   <div class="form-group"><input type="text" name="Title" class="form-control" value="<?php echo !empty($postData['Title'])?$postData['Title']:''; ?>" required="" /></div>
+  </td>
+ </tr>
+
+ <tr>
+  <td width="55%">
+    <div class="form-group">Publisher/Place of Publication:</div>
+  </td>
+  <td>
+   <div class="form-group"><input type="text" name="Publisher" class="form-control" value="<?php if (isset($Publisher)) { echo $Publisher; } ?>" /></div>
+  </td>
+ </tr>
+
+ <tr>
+  <td width="55%">
+    <div class="form-group">Volume/Edition:</div>
+  </td>
+  <td>
+   <div class="form-group"><input type="text" name="VolumeEdition" class="form-control" value="<?php if (isset($VolumeEdition)) { echo $VolumeEdition; } ?>" /></div>
+  </td>
+ </tr>
+
+ <tr>
+  <td width="55%">
+   <div class="form-group">Publication DATE:</div>
+  </td>
+  <td>
+   <div class="form-group"><input type="text" name="Copyright" class="form-control" value="<?php if (isset($Copyright)) { echo $Copyright; } ?>" /></div>
+  </td>
+ </tr>
+
+ <tr>
+  <td width="55%">
+    <div class="form-group">ISBN/ISSN:</div>
+  </td>
+  <td>
+   <div class="form-group"><input type="text" name="IsbnIssn" class="form-control" value="<?php if (isset($IsbnIssn)) { echo $IsbnIssn; } ?>" /></div>
+  </td>
+ </tr>
+
+ <tr>
+  <td width="55%">
+    <div class="form-group">Price:</div>
+  </td>
+  <td>
+   <div class="form-group"><input type="text" name="Price" class="form-control" value="<?php if (isset($Price)) { echo $Price; } ?>" /></div>
+  </td>
+ </tr>
+
+ <tr>
+  <td colspan="2">
+   <div class="form-group"><em><strong>** For Purchases requiring approval, documented approval must be attached.</strong></em> <a href="https://vanderbilt365.sharepoint.com/:b:/s/VanderbiltLibrariesTeam/EVsakfKX9JFArGvCEuiGFREBEohMfcO2sVaP1p_Yf3xZYQ?e=vLKeaD" target="_blank">(more info)</a></div>
+  </td>
+ </tr>
+
+ <tr>
+  <td width="55%">
+    <div class="form-group">Quantity:</div>
+  </td>
+  <td>
+   <select name="Quantity">
+<?php
+for ($i=1; $i<101; $i++) {
+  if ($i == 1) {
+    echo "<option value='1' selected>1</option>";
+  } else {
+    echo "<option value='".$i."'>".$i."</option>";
+  }
+}
+?>
+   </select></div>
+  </td>
+ </tr>
+
+ <tr>
+  <td width="55%">
+   <div class="form-group">Is part of series:</div>
+  </td>
+  <td>
+   <div class="form-group"><input type="text" name="IsPartOfSeries" class="form-control" value="<?php if (isset($IsPartOfSeries)) { echo $IsPartOfSeries; } ?>" /></div>
+  </td>
+ </tr>
+
+ <tr>
+  <td width="55%">
+   <div class="form-group">Journal/Series Title:</div>
+  </td>
+  <td>
+   <div class="form-group"><input type="text" name="JournalTitle" class="form-control" value="<?php if (isset($JournalTitle)) { echo $JournalTitle; } ?>" /></div>
+  </td>
+ </tr>
+
+ <tr>
+  <td width="55%">
+   <div class="form-group">Subscription/Standing Order to Begin With:</div>
+  </td>
+  <td>
+   <div class="form-group"><input type="text" name="StandingOrderStartsWith" class="form-control" value="<?php if (isset($StandingOrderStartsWith)) { echo $StandingOrderStartsWith; } ?>" /></div>
+  </td>
+ </tr>
+
+ <tr>
+  <td width="55%">
+   <div class="form-group">Source of Information (or Vendor's Name):</div>
+  </td>
+  <td>
+   <div class="form-group"><input type="text" name="Source" class="form-control" value="<?php if (isset($Source)) { echo $Source; } ?>" /></div>
+  </td>
+ </tr>
+
+ <tr>
+  <td width="55%">
+   <div class="form-group">Catalog/Vendor Item #:</div>
+  </td>
+  <td>
+   <div class="form-group"><input type="text" name="CatalogNum" class="form-control" value="<?php if (isset($CatalogNum)) { echo $CatalogNum; } ?>" /></div>
+  </td>
+ </tr>
+
+ <tr>
+  <td width="55%">
+   <div class="form-group">Comments:</div>
+  </td>
+  <td>
+   <div class="form-group"><textarea name="Comments" class="form-control" placeholder="Additional information here"><?php if (isset($Comments)) { echo $Comments; } ?></textarea></div>
+  </td>
+ </tr>
+</table>
+
+<p>
+
+<hr size="1">
+
+<table width="82%">
+ <tr>
+  <td colspan="2">
+   <div class="form-group"><h4 align="center">Format/Duplication Options</h4><br />(see <a target="_blank" href="https://vanderbilt365.sharepoint.com/:b:/s/VanderbiltLibrariesTeam/EXp_mSFw3MxGvfdkztaAzesB9Xx1zm5rHBOsUj6q4AARjQ?e=W0L6la">Workflow for Book Order Duplicates</a>)</div>
+  </td>
+ </tr>
+
+ <tr>
+  <td>
+   <div class="form-group"><strong>Required - either Print or EBook format</strong><p><input name="format" value="Print" type="radio" required="" onclick="hideDiv('otherform');" />Order print:<br /></div>
+  </td>
+ </tr>
+
+ <tr>
+  <td>
+   <div class="form-group">
+    <ul>
+     <li>
+      <input name="Duplicates" value="yes" type="checkbox" />even if duplicates any other print copy in the Catalog
+     </li>
+     <li>
+      <input name="Duplicates Edition" value="yes" type="checkbox" />even if duplicates any e-edition in the Catalog (unless checked, requests for print will be rejected as a duplicate of e-edition)
+     </li>
+    </ul>
+   </div>
+  </td>
+ </tr>
+
+ <tr>
+  <td>
+   <div class="form-group"><input name="format" value="EBook" type="radio" onclick="hideDiv('otherform');" />Order E-book:*</div>
+  </td>
+ </tr>
+
+ <tr>
+  <td>
+   <div class="form-group">
+    <ul>
+     <li><input name="EbookDup" value="yes" type="checkbox" />even if duplicates print (unless checked, requests for e-edition will be rejected as a duplicate of print)</li>
+    </ul>
+   </div>
+  </td>
+ </tr>
+
+ <tr>
+  <td>
+   <div class="form-group">* If duplicates any e-edition (including DDA), request will be rejected as a duplicate unless request is for additional users, below. JSTOR DDA is unlimited users and orders will be treated as duplicates.</div>
+   <div class="form-group">Please specify desired platform and number of users: <input name="EbookPlatform" type="text" value="<?php if (isset($EbookPlatform)) { echo "$EbookPlatform"; } ?>" /><br />
+   <em>Note that DRM rights vary by platform.</em></div>
+  </td>
+ </tr>
+
+ <tr>
+  <td>
+   <div class="form-group">
+    <input name="format" value="Other" type="radio" onclick="showDiv('otherform');" />Other (DVD, CD, etc.)
+   </div>
+   <div id="otherform" style="display: none">
+    What format? : <input type="text" name="otherformat" />
+   </div>
+  </td>
+ </tr>
+
+</table>
+
+<p>
+<hr>
+<p>
+
+<table width="82%">
+ <tr>
+  <td>
+   <div class="form-group">Attach documentation here: <input type="file" name="attachment[]" multiple class="form-control"></div>
+(To select more than one file, click on each while also pressing the Ctrl key. To remove an unwanted attachment, select the Choose Files button again and either select Cancel or select the correct file(s).)
+  </td>
+ </tr>
+
+ <tr><td>&nbsp;</td></tr>
+
+ <tr>
+  <td>
+   <div class="form-group"><strong>Please provide your email address if you wish to receive a copy of this request</strong><br />(use comma to separate email addresses):<br /><input type="text" name="CCEmail" size="60" value="<?php if (isset($CCEmail)) { echo "$CCEmail"; } ?>"></div>
+  </td>
+ </tr>
+
+ <tr><td><p></p></td></tr>
+
+ <tr>
+  <td>
+   <div class="form-group">
+<?php
+echo "$mysecurity"
+?>
+    </div>
+    <div class="form-group">
+     <b><font color="red">Security Test:</font></b><input name="yoursecurity" size="5" type="text">
+    </div>
+    <div class="form-group">
+     Please type the number shown above this box to help us avoid spam. <input name="keytest" value="<?php echo "$keytest"; ?>" type="hidden">
+    </div>
+   </td>
+  </tr>
+  <tr>
+   <td>
+     <p><input type="submit" value="submit" /><input type="reset" value="Start Over" /></p>
+   </td>
+  </tr>
+ </table>
+</form>
+
+<?php
+}
+?>
+
+</span>
+</td></tr></table>
+
+<?php
+
+// from includes.php
+echo $bottom;
+
+?>
