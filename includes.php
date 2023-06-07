@@ -42,7 +42,7 @@ function mycaptcha_test($keytest, $securitycode){
 }
 
 function &forms_connect() {
-  $con = mysqli_connect("mysql.library.vanderbilt.edu","formadmin","up2N0-gO0D!","forms");
+  $con = mysqli_connect("dev-mysql.library.vanderbilt.edu","formadmin","up2N0-gO0D!","forms");
   if (!$con) {
     $error = die('Could not connect: ' . mysqli_connect_error($con));
     return $error;
