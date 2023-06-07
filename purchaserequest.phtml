@@ -143,8 +143,8 @@ if($_POST){
       if($uploadStatus > 0){
 
         // Recipient
-        //$toEmail = 'jmcgranahan@gmail.com';
-	$toEmail = 'orders.library@vanderbilt.edu';
+        $toEmail = 'jmcgranahan@gmail.com';
+	    //$toEmail = 'orders.library@vanderbilt.edu';
 
         if ((isset($spemail)) && ($spemail == "specialcollections@vanderbilt.edu")) {
           $toEmail .= ", $spemail";
