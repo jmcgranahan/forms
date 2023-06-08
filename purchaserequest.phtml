@@ -166,11 +166,11 @@ if($_POST){
         // Header for sender info
 	$headers="From: ".$from;
 	if ((isset($RequestorEmail)) && (isset($CCEmail))) {
-	  $headers .= "Cc: ".$RequestorEmail.",".$CCEmail;
+	  $headers .= "\r\n"."Cc: ".$RequestorEmail.",".$CCEmail;
 	} elseif ((isset($RequestorEmail)) && (!isset($CCEmail))) {
-          $headers .= "Cc: ".$RequestorEmail;
+          $headers .= "\r\n"."Cc: ".$RequestorEmail;
 	} elseif ((!isset($RequestorEmail)) && (isset($CCEmail))) {
-          $headers .= "Cc: ".$CCEmail;
+          $headers .= "\r\n"."Cc: ".$CCEmail;
 	}
         /** 
         if (isset($CCEmail)) {
@@ -189,6 +189,8 @@ if($_POST){
           // Headers for attachment
           $headers .= "\r\nMIME-Version: 1.0\n" . "Content-Type: multipart/mixed;\n" . " boundary=\"{$mime_boundary}\"";
 
+          echo "Headers (in IF before ELSE): $headers <br />";
+          
           // Multipart boundary
           $message = "--{$mime_boundary}\n" . "Content-Type: text/html; charset=\"UTF-8\"\n" .
             "Content-Transfer-Encoding: 7bit\n\n" . $htmlContent . "\n\n";
@@ -220,7 +222,7 @@ if($_POST){
           $headers .= "\r\n". "MIME-Version: 1.0";
           $headers .= "\r\n". "Content-type:text/html;charset=UTF-8";
 
-          //echo "Headers: $headers <br />";
+          echo "Headers (after ELSE): $headers <br />";
 
           // Send email
           $mail = mail($toEmail, $emailSubject, $htmlContent, $headers);
