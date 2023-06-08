@@ -1,7 +1,7 @@
 <?php
 
 // set debug to greater than 0 troubleshoot
-$debug = 0;
+$debug = 10;
 
 // include common header & footer
 include("includes.php");
@@ -166,11 +166,11 @@ if($_POST){
         // Header for sender info
 	$headers="From: ".$from;
 	if ((isset($RequestorEmail)) && (isset($CCEmail))) {
-	  $headers .= "\r\n Cc: $RequestorEmail,$CCEmail";
+	  $headers .= "Cc: ".$RequestorEmail.",".$CCEmail;
 	} elseif ((isset($RequestorEmail)) && (!isset($CCEmail))) {
-          $headers .= "\r\n Cc: $RequestorEmail";
+          $headers .= "Cc: ".$RequestorEmail;
 	} elseif ((!isset($RequestorEmail)) && (isset($CCEmail))) {
-          $headers .= "\r\n Cc: $CCEmail";
+          $headers .= "Cc: ".$CCEmail;
 	}
         /** 
         if (isset($CCEmail)) {
