@@ -143,7 +143,7 @@ if($_POST){
       if($uploadStatus > 0){
 
         // Recipient
-        $toEmail = "jmcgranahan\@gmail.com";
+        $toEmail = 'jmcgranahan@gmail.com';
 	    //$toEmail = 'orders.library@vanderbilt.edu';
 
         if ((isset($spemail)) && ($spemail == "specialcollections@vanderbilt.edu")) {
@@ -151,7 +151,7 @@ if($_POST){
         }
 
         // Sender
-        $from = "libsys@vanderbilt.edu";
+        $from = 'libsys@vanderbilt.edu';
         $fromName = 'StaffPurchaseRequest';
 
         // Subject
@@ -177,7 +177,7 @@ if($_POST){
           $headers .= "\r\n" . "Cc: $CCEmail";
         }
         **/
-        $headers .= "\r\n" . "Bcc: jamen.mcgranahan\@vanderbilt.edu";
+        $headers .= "\r\n" . 'Bcc: jamen.mcgranahan@vanderbilt.edu';
         if ($debug > 0) { echo "From Email Address: ".$from."<br />Requestor Email Address: ".$RequestorEmail."<br />CCEmail Address: ".$CCEmail."<br />"; }
 
         if(!empty($uploadedFile)) {
